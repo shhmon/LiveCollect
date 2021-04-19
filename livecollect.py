@@ -41,60 +41,9 @@ class Collector:
 		# Get all file references
 		filerefs = [r.find("FileRef") for r in root.iter('SampleRef')]
 
-		# Modify according to version
+		# Handle the references
 		for ref in filerefs:
-			pathType = ref.find("RelativePathType")
-
-			if pathType.attrib['Value'] == PATH_TYPE_EXTERNAL:
-
-				if version == 11:
-					truPath = ref.find("Path")
-					relPath = ref.find("RelativePath")
-
-					filePath = truPath.attrib["Value"]
-					fileName = re.match(REGEX_PATTERN, filePath).group(2)
-
-					# Update references
-					truPath.set('Value', self.sampPath + fileName)
-					relPath.set('Value', REL_SAMPLE_LOCATION + fileName)
-	
-				if version == 10:
-
-					relPath = ref.find("RelativePath")
-
-					# Construct path from relative path elements
-					filePath = self.projPath[:-1]
-					fileName = ref.find('Name').attrib['Value']
-					relpElem = [e for e in relPath.iter('RelativePathElement')]
-
-					for element in relpElem:
-						value = element.attrib['Dir']
-						filePath += '/' + (value if value else '..')
-						relPath.remove(element)
-					
-					filePath += '/' + fileName
-
-					# Update references
-					ET.SubElement(relPath, 'RelativePathElement', attrib={'Dir': 'Samples', 'Id': str(len(relpElem)) })
-					ET.SubElement(relPath, 'RelativePathElement', attrib={'Dir': 'Imported', 'Id': str(len(relpElem) + 1) })
-
-					# Update the PathHint references (not sure if needed)
-					pathHint = ref.find("SearchHint").find("PathHint")
-					relpElem = [e for e in pathHint.iter('RelativePathElement')]
-
-					for element in relpElem:
-						pathHint.remove(element)
-
-					dirList = self.projPath.split('/')[1:-1] + ['Samples', 'Imported']
-					for i, _dir in enumerate(dirList):
-						ET.SubElement(pathHint, 'RelativePathElement', attrib={'Dir': _dir, 'Id': str(len(relpElem) + i) })
-
-			# Update path type
-			pathType.set('Value', PATH_TYPE_PROJECT)
-
-			# Copy the sample
-			print(f'Copying external sample: {filePath}')
-			self.copy_sample(filePath)
+			self.handle_reference(ref, version)
 
 		# Save the live set		
 		content = ET.tostring(root, encoding='utf8', method='xml')
@@ -103,6 +52,56 @@ class Collector:
 			f.close()
 
 		print('Done!')
+
+	def handle_reference(self, ref, version):
+		pathType = ref.find("RelativePathType")
+
+		if pathType.attrib['Value'] == PATH_TYPE_EXTERNAL:
+			relaPath = ref.find("RelativePath")
+
+			if version == 11:
+				truePath = ref.find("Path")
+				filePath = truePath.attrib["Value"]
+				fileName = re.match(REGEX_PATTERN, filePath).group(2)
+
+				# Update references
+				truePath.set('Value', self.sampPath + fileName)
+				relaPath.set('Value', REL_SAMPLE_LOCATION + fileName)
+
+			elif version == 10:
+				# Construct path from relative path elements
+				filePath = self.projPath[:-1]
+				fileName = ref.find('Name').attrib['Value']
+				relpElem = [e for e in relaPath.iter('RelativePathElement')]
+
+				for element in relpElem:
+					value = element.attrib['Dir']
+					filePath += '/' + (value if value else '..')
+					relaPath.remove(element)
+				
+				filePath += '/' + fileName
+
+				# Update references
+				ET.SubElement(relaPath, 'RelativePathElement', attrib={'Dir': 'Samples', 'Id': str(len(relpElem)) })
+				ET.SubElement(relaPath, 'RelativePathElement', attrib={'Dir': 'Imported', 'Id': str(len(relpElem) + 1) })
+
+				# Update the PathHint references (not sure if needed)
+				pathHint = ref.find("SearchHint").find("PathHint")
+				relpElem = [e for e in pathHint.iter('RelativePathElement')]
+
+				for element in relpElem:
+					pathHint.remove(element)
+
+				dirList = self.projPath.split('/')[1:-1] + ['Samples', 'Imported']
+				for i, _dir in enumerate(dirList):
+					ET.SubElement(pathHint, 'RelativePathElement', attrib={'Dir': _dir, 'Id': str(len(relpElem) + i) })
+			
+			else:
+				return
+			
+			pathType.set('Value', PATH_TYPE_PROJECT)
+			print(f'Copying external sample: {filePath}')
+			self.copy_sample(filePath)
 			
 	# Copy file to local sample folder
 	def copy_sample(self, src):
